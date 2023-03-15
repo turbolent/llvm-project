@@ -30,7 +30,9 @@
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/Format.h"
 #include "llvm/Support/ManagedStatic.h"
+#ifndef __wasi__
 #include "llvm/Support/Mutex.h"
+#endif
 #include "llvm/Support/Timer.h"
 #include "llvm/Support/YAMLTraits.h"
 #include "llvm/Support/raw_ostream.h"
@@ -91,7 +93,9 @@ public:
 } // end anonymous namespace
 
 static ManagedStatic<StatisticInfo> StatInfo;
+#ifndef __wasi__
 static ManagedStatic<sys::SmartMutex<true> > StatLock;
+#endif
 
 /// RegisterStatistic - The first time a statistic is bumped, this method is
 /// called.
@@ -105,9 +109,13 @@ void TrackingStatistic::RegisterStatistic() {
   // order inversion. To avoid that, we dereference the ManagedStatics first,
   // and only take StatLock afterwards.
   if (!Initialized.load(std::memory_order_relaxed)) {
+#ifndef __wasi__
     sys::SmartMutex<true> &Lock = *StatLock;
+#endif
     StatisticInfo &SI = *StatInfo;
+#ifndef __wasi__
     sys::SmartScopedLock<true> Writer(Lock);
+#endif
     // Check Initialized again after acquiring the lock.
     if (Initialized.load(std::memory_order_relaxed))
       return;
@@ -151,7 +159,9 @@ void StatisticInfo::sort() {
 }
 
 void StatisticInfo::reset() {
+#ifndef __wasi__
   sys::SmartScopedLock<true> Writer(*StatLock);
+#endif
 
   // Tell each statistic that it isn't registered so it has to register
   // again. We're holding the lock so it won't be able to do so until we're
@@ -200,7 +210,9 @@ void llvm::PrintStatistics(raw_ostream &OS) {
 }
 
 void llvm::PrintStatisticsJSON(raw_ostream &OS) {
+#ifndef __wasi__
   sys::SmartScopedLock<true> Reader(*StatLock);
+#endif
   StatisticInfo &Stats = *StatInfo;
 
   Stats.sort();
@@ -227,7 +239,9 @@ void llvm::PrintStatisticsJSON(raw_ostream &OS) {
 
 void llvm::PrintStatistics() {
 #if LLVM_ENABLE_STATS
+#ifndef __wasi__
   sys::SmartScopedLock<true> Reader(*StatLock);
+#endif
   StatisticInfo &Stats = *StatInfo;
 
   // Statistics not enabled?
@@ -254,7 +268,9 @@ void llvm::PrintStatistics() {
 }
 
 const std::vector<std::pair<StringRef, uint64_t>> llvm::GetStatistics() {
+#ifndef __wasi__
   sys::SmartScopedLock<true> Reader(*StatLock);
+#endif
   std::vector<std::pair<StringRef, uint64_t>> ReturnStats;
 
   for (const auto &Stat : StatInfo->statistics())

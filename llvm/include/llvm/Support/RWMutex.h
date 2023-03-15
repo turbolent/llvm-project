@@ -13,6 +13,8 @@
 #ifndef LLVM_SUPPORT_RWMUTEX_H
 #define LLVM_SUPPORT_RWMUTEX_H
 
+#ifndef __wasi__
+
 #include "llvm/Config/llvm-config.h"
 #include "llvm/Support/Threading.h"
 #include <cassert>
@@ -197,5 +199,7 @@ typedef SmartScopedWriter<false> ScopedWriter;
 
 } // end namespace sys
 } // end namespace llvm
+
+#endif
 
 #endif // LLVM_SUPPORT_RWMUTEX_H

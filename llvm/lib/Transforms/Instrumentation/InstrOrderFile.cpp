@@ -43,7 +43,9 @@ namespace {
 // fixed-size buffer that saves the MD5 hash of the function. We need
 // a global variable to save the index into the buffer.
 
+#ifndef __wasi__
 std::mutex MappingMutex;
+#endif
 
 struct InstrOrderFile {
 private:
@@ -90,7 +92,9 @@ public:
   // update the buffer.
   void generateCodeSequence(Module &M, Function &F, int FuncId) {
     if (!ClOrderFileWriteMapping.empty()) {
+#ifndef __wasi__
       std::lock_guard<std::mutex> LogLock(MappingMutex);
+#endif
       std::error_code EC;
       llvm::raw_fd_ostream OS(ClOrderFileWriteMapping, EC,
                               llvm::sys::fs::OF_Append);

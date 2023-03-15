@@ -1105,7 +1105,9 @@ template <class ELFT> void ObjFile<ELFT>::initializeLocalSymbols() {
 // Called after all ObjFile::parse is called for all ObjFiles. This checks
 // duplicate symbols and may do symbol property merge in the future.
 template <class ELFT> void ObjFile<ELFT>::postParse() {
+#ifndef __wasi__
   static std::mutex mu;
+#endif
   ArrayRef<Elf_Sym> eSyms = this->getELFSyms<ELFT>();
   for (size_t i = firstGlobal, end = eSyms.size(); i != end; ++i) {
     const Elf_Sym &eSym = eSyms[i];
@@ -1146,7 +1148,9 @@ template <class ELFT> void ObjFile<ELFT>::postParse() {
                          sym.getName());
       }
       if (sym.file == this) {
+#ifndef __wasi__
         std::lock_guard<std::mutex> lock(mu);
+#endif
         ctx->nonPrevailingSyms.emplace_back(&sym, secIdx);
       }
       continue;
@@ -1159,7 +1163,9 @@ template <class ELFT> void ObjFile<ELFT>::postParse() {
 
     if (sym.binding == STB_WEAK || binding == STB_WEAK)
       continue;
+#ifndef __wasi__
     std::lock_guard<std::mutex> lock(mu);
+#endif
     ctx->duplicates.push_back({&sym, this, sec, eSym.st_value});
   }
 }

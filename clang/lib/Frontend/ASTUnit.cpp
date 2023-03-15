@@ -97,7 +97,9 @@
 #include <cstdio>
 #include <cstdlib>
 #include <memory>
+#ifndef __wasi__
 #include <mutex>
+#endif
 #include <string>
 #include <tuple>
 #include <utility>
@@ -2668,20 +2670,28 @@ InputKind ASTUnit::getInputKind() const {
 
 #ifndef NDEBUG
 ASTUnit::ConcurrencyState::ConcurrencyState() {
+#ifndef __wasi__
   Mutex = new std::recursive_mutex;
+#endif
 }
 
 ASTUnit::ConcurrencyState::~ConcurrencyState() {
+#ifndef __wasi__
   delete static_cast<std::recursive_mutex *>(Mutex);
+#endif
 }
 
 void ASTUnit::ConcurrencyState::start() {
+#ifndef __wasi__
   bool acquired = static_cast<std::recursive_mutex *>(Mutex)->try_lock();
   assert(acquired && "Concurrent access to ASTUnit!");
+#endif
 }
 
 void ASTUnit::ConcurrencyState::finish() {
+#ifndef __wasi__
   static_cast<std::recursive_mutex *>(Mutex)->unlock();
+#endif
 }
 
 #else // NDEBUG

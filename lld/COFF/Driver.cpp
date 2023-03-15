@@ -50,7 +50,9 @@
 #include "llvm/Support/raw_ostream.h"
 #include "llvm/ToolDrivers/llvm-lib/LibDriver.h"
 #include <algorithm>
+#ifndef __wasi__
 #include <future>
+#endif
 #include <memory>
 
 using namespace llvm;
@@ -125,6 +127,7 @@ static bool isCrtend(StringRef s) {
 // (a limited resource on Windows) for the duration that the future is pending.
 using MBErrPair = std::pair<std::unique_ptr<MemoryBuffer>, std::error_code>;
 
+#ifndef __wasi__
 // Create a std::future that opens and maps a file using the best strategy for
 // the host platform.
 static std::future<MBErrPair> createFutureForFile(std::string path) {
@@ -137,12 +140,17 @@ static std::future<MBErrPair> createFutureForFile(std::string path) {
   auto strategy = std::launch::deferred;
 #endif
   return std::async(strategy, [=]() {
+#else
+static MBErrPair openFile(std::string path) {
+#endif
     auto mbOrErr = MemoryBuffer::getFile(path, /*IsText=*/false,
                                          /*RequiresNullTerminator=*/false);
     if (!mbOrErr)
       return MBErrPair{nullptr, mbOrErr.getError()};
     return MBErrPair{std::move(*mbOrErr), std::error_code()};
+#ifndef __wasi__
   });
+#endif
 }
 
 // Symbol names are mangled by prepending "_" on x86.
@@ -240,11 +248,17 @@ void LinkerDriver::addBuffer(std::unique_ptr<MemoryBuffer> mb,
 }
 
 void LinkerDriver::enqueuePath(StringRef path, bool wholeArchive, bool lazy) {
+#ifndef __wasi__
   auto future = std::make_shared<std::future<MBErrPair>>(
       createFutureForFile(std::string(path)));
+#endif
   std::string pathStr = std::string(path);
+#ifndef __wasi__
   enqueueTask([=]() {
     auto mbOrErr = future->get();
+#else
+    auto mbOrErr = openFile(std::string(path));
+#endif
     if (mbOrErr.second) {
       std::string msg =
           "could not open '" + pathStr + "': " + mbOrErr.second.message();
@@ -260,7 +274,9 @@ void LinkerDriver::enqueuePath(StringRef path, bool wholeArchive, bool lazy) {
         error(msg + "; did you mean '" + nearest + "'");
     } else
       driver->addBuffer(std::move(mbOrErr.first), wholeArchive, lazy);
+#ifndef __wasi__
   });
+#endif
 }
 
 void LinkerDriver::addArchiveBuffer(MemoryBufferRef mb, StringRef symName,
@@ -317,17 +333,23 @@ void LinkerDriver::enqueueArchiveMember(const Archive::Child &c,
       c.getFullName(),
       "could not get the filename for the member defining symbol " +
       toCOFFString(sym));
+#ifndef __wasi__
   auto future = std::make_shared<std::future<MBErrPair>>(
       createFutureForFile(childName));
   enqueueTask([=]() {
     auto mbOrErr = future->get();
+#else
+    auto mbOrErr = openFile(childName);
+#endif
     if (mbOrErr.second)
       reportBufferError(errorCodeToError(mbOrErr.second), childName);
     // Pass empty string as archive name so that the original filename is
     // used as the buffer identifier.
     driver->addArchiveBuffer(takeBuffer(std::move(mbOrErr.first)),
                              toCOFFString(sym), "", /*OffsetInArchive=*/0);
+#ifndef __wasi__
   });
+#endif
 }
 
 static bool isDecorated(StringRef sym) {

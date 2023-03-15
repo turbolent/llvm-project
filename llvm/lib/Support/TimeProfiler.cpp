@@ -21,14 +21,18 @@
 #include <algorithm>
 #include <cassert>
 #include <chrono>
+#ifndef __wasi__
 #include <mutex>
+#endif
 #include <string>
 #include <vector>
 
 using namespace std::chrono;
 using namespace llvm;
 
+#ifndef __wasi__
 static std::mutex Mu;
+#endif
 // List of all instances
 static ManagedStatic<std::vector<TimeTraceProfiler *>>
     ThreadTimeTraceProfilerInstances; // GUARDED_BY(Mu)
@@ -123,8 +127,10 @@ struct llvm::TimeTraceProfiler {
   // Write events from this TimeTraceProfilerInstance and
   // ThreadTimeTraceProfilerInstances.
   void write(raw_pwrite_stream &OS) {
+#ifndef __wasi__
     // Acquire Mutex as reading ThreadTimeTraceProfilerInstances.
     std::lock_guard<std::mutex> Lock(Mu);
+#endif
     assert(Stack.empty() &&
            "All profiler sections should be ended when calling write");
     assert(llvm::all_of(*ThreadTimeTraceProfilerInstances,
@@ -272,7 +278,9 @@ void llvm::timeTraceProfilerInitialize(unsigned TimeTraceGranularity,
 void llvm::timeTraceProfilerCleanup() {
   delete TimeTraceProfilerInstance;
   TimeTraceProfilerInstance = nullptr;
+#ifndef __wasi__
   std::lock_guard<std::mutex> Lock(Mu);
+#endif
   for (auto *TTP : *ThreadTimeTraceProfilerInstances)
     delete TTP;
   ThreadTimeTraceProfilerInstances->clear();
@@ -281,7 +289,9 @@ void llvm::timeTraceProfilerCleanup() {
 // Finish TimeTraceProfilerInstance on a worker thread.
 // This doesn't remove the instance, just moves the pointer to global vector.
 void llvm::timeTraceProfilerFinishThread() {
+#ifndef __wasi__
   std::lock_guard<std::mutex> Lock(Mu);
+#endif
   ThreadTimeTraceProfilerInstances->push_back(TimeTraceProfilerInstance);
   TimeTraceProfilerInstance = nullptr;
 }

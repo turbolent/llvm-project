@@ -16,7 +16,9 @@
 #include "llvm/ADT/StringMap.h"
 #include "llvm/Config/config.h"
 #include "llvm/Support/ManagedStatic.h"
+#ifndef __wasi__
 #include "llvm/Support/Mutex.h"
+#endif
 #include <vector>
 
 using namespace llvm;
@@ -111,8 +113,10 @@ namespace {
 static llvm::ManagedStatic<llvm::StringMap<void *>> ExplicitSymbols;
 // Collection of known library handles.
 static llvm::ManagedStatic<DynamicLibrary::HandleSet> OpenedHandles;
+#ifndef __wasi__
 // Lock for ExplicitSymbols and OpenedHandles.
 static llvm::ManagedStatic<llvm::sys::SmartMutex<true>> SymbolsMutex;
+#endif
 } // namespace
 
 #ifdef _WIN32
@@ -136,7 +140,9 @@ void *SearchForAddressOfSpecialSymbol(const char *SymbolName) {
 } // namespace llvm
 
 void DynamicLibrary::AddSymbol(StringRef SymbolName, void *SymbolValue) {
+#ifndef __wasi__
   SmartScopedLock<true> Lock(*SymbolsMutex);
+#endif
   (*ExplicitSymbols)[SymbolName] = SymbolValue;
 }
 
@@ -148,7 +154,9 @@ DynamicLibrary DynamicLibrary::getPermanentLibrary(const char *FileName,
 
   void *Handle = HandleSet::DLOpen(FileName, Err);
   if (Handle != &Invalid) {
+#ifndef __wasi__
     SmartScopedLock<true> Lock(*SymbolsMutex);
+#endif
     HS.AddLibrary(Handle, /*IsProcess*/ FileName == nullptr);
   }
 
@@ -157,7 +165,9 @@ DynamicLibrary DynamicLibrary::getPermanentLibrary(const char *FileName,
 
 DynamicLibrary DynamicLibrary::addPermanentLibrary(void *Handle,
                                                    std::string *Err) {
+#ifndef __wasi__
   SmartScopedLock<true> Lock(*SymbolsMutex);
+#endif
   // If we've already loaded this library, tell the caller.
   if (!OpenedHandles->AddLibrary(Handle, /*IsProcess*/false, /*CanClose*/false))
     *Err = "Library already loaded";
@@ -173,8 +183,9 @@ void *DynamicLibrary::getAddressOfSymbol(const char *SymbolName) {
 
 void *DynamicLibrary::SearchForAddressOfSymbol(const char *SymbolName) {
   {
+#ifndef __wasi__
     SmartScopedLock<true> Lock(*SymbolsMutex);
-
+#endif
     // First check symbols added via AddSymbol().
     if (ExplicitSymbols.isConstructed()) {
       StringMap<void *>::iterator i = ExplicitSymbols->find(SymbolName);

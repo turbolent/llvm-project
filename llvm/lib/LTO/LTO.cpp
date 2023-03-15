@@ -1211,15 +1211,18 @@ public:
 
 namespace {
 class InProcessThinBackend : public ThinBackendProc {
+#ifndef __wasi__
   ThreadPool BackendThreadPool;
+#endif
   AddStreamFn AddStream;
   FileCache Cache;
   std::set<GlobalValue::GUID> CfiFunctionDefs;
   std::set<GlobalValue::GUID> CfiFunctionDecls;
 
   Optional<Error> Err;
+#ifndef __wasi__
   std::mutex ErrMu;
-
+#endif
   bool ShouldEmitIndexFiles;
 
 public:
@@ -1231,7 +1234,10 @@ public:
       bool ShouldEmitIndexFiles, bool ShouldEmitImportsFiles)
       : ThinBackendProc(Conf, CombinedIndex, ModuleToDefinedGVSummaries,
                         OnWrite, ShouldEmitImportsFiles),
-        BackendThreadPool(ThinLTOParallelism), AddStream(std::move(AddStream)),
+#ifndef __wasi__
+        BackendThreadPool(ThinLTOParallelism),
+#endif
+        AddStream(std::move(AddStream)),
         Cache(std::move(Cache)), ShouldEmitIndexFiles(ShouldEmitIndexFiles) {
     for (auto &Name : CombinedIndex.cfiFunctionDefs())
       CfiFunctionDefs.insert(
@@ -1298,6 +1304,7 @@ public:
     assert(ModuleToDefinedGVSummaries.count(ModulePath));
     const GVSummaryMapTy &DefinedGlobals =
         ModuleToDefinedGVSummaries.find(ModulePath)->second;
+#ifndef __wasi__
     BackendThreadPool.async(
         [=](BitcodeModule BM, ModuleSummaryIndex &CombinedIndex,
             const FunctionImporter::ImportMapTy &ImportList,
@@ -1306,6 +1313,7 @@ public:
                 &ResolvedODR,
             const GVSummaryMapTy &DefinedGlobals,
             MapVector<StringRef, BitcodeModule> &ModuleMap) {
+#endif
           if (LLVM_ENABLE_THREADS && Conf.TimeTraceEnabled)
             timeTraceProfilerInitialize(Conf.TimeTraceGranularity,
                                         "thin backend");
@@ -1313,7 +1321,9 @@ public:
               AddStream, Cache, Task, BM, CombinedIndex, ImportList, ExportList,
               ResolvedODR, DefinedGlobals, ModuleMap);
           if (E) {
+#ifndef __wasi__
             std::unique_lock<std::mutex> L(ErrMu);
+#endif
             if (Err)
               Err = joinErrors(std::move(*Err), std::move(E));
             else
@@ -1321,17 +1331,20 @@ public:
           }
           if (LLVM_ENABLE_THREADS && Conf.TimeTraceEnabled)
             timeTraceProfilerFinishThread();
+#ifndef __wasi__
         },
         BM, std::ref(CombinedIndex), std::ref(ImportList), std::ref(ExportList),
         std::ref(ResolvedODR), std::ref(DefinedGlobals), std::ref(ModuleMap));
-
+#endif
     if (OnWrite)
       OnWrite(std::string(ModulePath));
     return Error::success();
   }
 
   Error wait() override {
+#ifndef __wasi__
     BackendThreadPool.wait();
+#endif
     if (Err)
       return std::move(*Err);
     else
@@ -1339,7 +1352,11 @@ public:
   }
 
   unsigned getThreadCount() override {
+#ifndef __wasi__
     return BackendThreadPool.getThreadCount();
+#else
+    return 1;
+#endif
   }
 };
 } // end anonymous namespace

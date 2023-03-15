@@ -14,8 +14,10 @@
 #include "llvm/Support/Signals.h"
 #include "llvm/Support/ThreadLocal.h"
 #include "llvm/Support/thread.h"
+#ifndef __wasi__
 #include <mutex>
 #include <setjmp.h>
+#endif
 
 using namespace llvm;
 
@@ -34,7 +36,9 @@ struct CrashRecoveryContextImpl {
   const CrashRecoveryContextImpl *Next;
 
   CrashRecoveryContext *CRC;
+#ifndef __wasi__
   ::jmp_buf JumpBuffer;
+#endif
   volatile unsigned Failed : 1;
   unsigned SwitchedThread : 1;
   unsigned ValidJumpBuffer : 1;
@@ -75,17 +79,22 @@ public:
 
     CRC->RetCode = RetCode;
 
+#ifdef __wasi__
+    abort();
+#else
     // Jump back to the RunSafely we were called under.
     if (ValidJumpBuffer)
       longjmp(JumpBuffer, 1);
-
+#endif
     // Otherwise let the caller decide of the outcome of the crash. Currently
     // this occurs when using SEH on Windows with MSVC or clang-cl.
   }
 };
 } // namespace
 
+#ifndef __wasi__
 static ManagedStatic<std::mutex> gCrashRecoveryContextMutex;
+#endif
 static bool gCrashRecoveryEnabled = false;
 
 static ManagedStatic<sys::ThreadLocal<const CrashRecoveryContext>>
@@ -137,7 +146,9 @@ CrashRecoveryContext *CrashRecoveryContext::GetCurrent() {
 }
 
 void CrashRecoveryContext::Enable() {
+#ifndef __wasi__
   std::lock_guard<std::mutex> L(*gCrashRecoveryContextMutex);
+#endif
   // FIXME: Shouldn't this be a refcount or something?
   if (gCrashRecoveryEnabled)
     return;
@@ -146,7 +157,9 @@ void CrashRecoveryContext::Enable() {
 }
 
 void CrashRecoveryContext::Disable() {
+#ifndef __wasi__
   std::lock_guard<std::mutex> L(*gCrashRecoveryContextMutex);
+#endif
   if (!gCrashRecoveryEnabled)
     return;
   gCrashRecoveryEnabled = false;
@@ -341,6 +354,7 @@ static void uninstallExceptionOrSignalHandlers() {
 // reliable fashion -- if we get a signal outside of a crash recovery context we
 // simply disable crash recovery and raise the signal again.
 
+#ifndef __wasi__
 #include <signal.h>
 
 static const int Signals[] =
@@ -388,8 +402,10 @@ static void CrashRecoverySignalHandler(int Signal) {
   if (CRCI)
     const_cast<CrashRecoveryContextImpl *>(CRCI)->HandleCrash(RetCode, Signal);
 }
+#endif
 
 static void installExceptionOrSignalHandlers() {
+#ifndef __wasi__
   // Setup the signal handler.
   struct sigaction Handler;
   Handler.sa_handler = CrashRecoverySignalHandler;
@@ -399,17 +415,22 @@ static void installExceptionOrSignalHandlers() {
   for (unsigned i = 0; i != NumSignals; ++i) {
     sigaction(Signals[i], &Handler, &PrevActions[i]);
   }
+#endif
 }
 
 static void uninstallExceptionOrSignalHandlers() {
+#ifndef __wasi__
   // Restore the previous signal handlers.
   for (unsigned i = 0; i != NumSignals; ++i)
     sigaction(Signals[i], &PrevActions[i], nullptr);
+#endif
 }
 
 #endif // !_WIN32
 
 bool CrashRecoveryContext::RunSafely(function_ref<void()> Fn) {
+#ifndef __wasi__
+
   // If crash recovery is disabled, do nothing.
   if (gCrashRecoveryEnabled) {
     assert(!Impl && "Crash recovery context already initialized!");
@@ -421,6 +442,7 @@ bool CrashRecoveryContext::RunSafely(function_ref<void()> Fn) {
       return false;
     }
   }
+#endif
 
   Fn();
   return true;
@@ -465,7 +487,7 @@ bool CrashRecoveryContext::throwIfCrash(int RetCode) {
     return false;
 #if defined(_WIN32)
   ::RaiseException(RetCode, 0, 0, NULL);
-#else
+#elif !defined(__wasi__)
   llvm::sys::unregisterHandlers();
   raise(RetCode - 128);
 #endif

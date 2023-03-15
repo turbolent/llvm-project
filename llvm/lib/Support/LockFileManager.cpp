@@ -25,7 +25,9 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <system_error>
+#ifndef __wasi__
 #include <thread>
+#endif
 #include <tuple>
 
 #ifdef _WIN32
@@ -99,7 +101,9 @@ static std::error_code getHostID(SmallVectorImpl<char> &HostID) {
   char HostName[256];
   HostName[255] = 0;
   HostName[0] = 0;
+#ifndef __wasi__
   gethostname(HostName, 255);
+#endif
   StringRef HostNameRef(HostName);
   HostID.append(HostNameRef.begin(), HostNameRef.end());
 
@@ -118,8 +122,13 @@ bool LockFileManager::processStillExecuting(StringRef HostID, int PID) {
     return true; // Conservatively assume it's executing on error.
 
   // Check whether the process is dead. If so, we're done.
+#ifdef __wasi__
+  if (StoredHostID == HostID && errno == ESRCH)
+    return false;
+#else
   if (StoredHostID == HostID && getsid(PID) == -1 && errno == ESRCH)
     return false;
+#endif
 #endif
 
   return true;
@@ -317,7 +326,11 @@ LockFileManager::waitForUnlock(const unsigned MaxSeconds) {
     std::uniform_int_distribution<unsigned long> Distribution(1,
                                                               WaitMultiplier);
     unsigned long WaitDurationMS = MinWaitDurationMS * Distribution(Engine);
+#ifndef __wasi__
     std::this_thread::sleep_for(std::chrono::milliseconds(WaitDurationMS));
+#else
+    usleep(WaitDurationMS * 1000);
+#endif
 
     if (sys::fs::access(LockFileName.c_str(), sys::fs::AccessMode::Exist) ==
         errc::no_such_file_or_directory) {

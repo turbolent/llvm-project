@@ -21,7 +21,9 @@
 #include "llvm/Support/Endian.h"
 #include "llvm/Support/xxhash.h"
 #include <algorithm>
+#ifndef __wasi__
 #include <mutex>
+#endif
 #include <vector>
 
 using namespace llvm;
@@ -113,8 +115,10 @@ void InputSectionBase::uncompress() const {
   size_t size = uncompressedSize;
   uint8_t *uncompressedBuf;
   {
+#ifndef __wasi__
     static std::mutex mu;
     std::lock_guard<std::mutex> lock(mu);
+#endif
     uncompressedBuf = bAlloc().Allocate<uint8_t>(size);
   }
 

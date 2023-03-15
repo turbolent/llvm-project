@@ -34,7 +34,9 @@ ArgumentsAdjuster getDefaultArgumentsAdjusters() {
 class ThreadSafeToolResults : public ToolResults {
 public:
   void addResult(StringRef Key, StringRef Value) override {
+#ifndef __wasi__
     std::unique_lock<std::mutex> LockGuard(Mutex);
+#endif
     Results.addResult(Key, Value);
   }
 
@@ -50,7 +52,9 @@ public:
 
 private:
   InMemoryToolResults Results;
+#ifndef __wasi__
   std::mutex Mutex;
+#endif
 };
 
 } // namespace
@@ -87,14 +91,20 @@ llvm::Error AllTUsToolExecutor::execute(
         "Only support executing exactly 1 action at this point.");
 
   std::string ErrorMsg;
+#ifndef __wasi__
   std::mutex TUMutex;
+#endif
   auto AppendError = [&](llvm::Twine Err) {
+#ifndef __wasi__
     std::unique_lock<std::mutex> LockGuard(TUMutex);
+#endif
     ErrorMsg += Err.str();
   };
 
   auto Log = [&](llvm::Twine Msg) {
+#ifndef __wasi__
     std::unique_lock<std::mutex> LockGuard(TUMutex);
+#endif
     llvm::errs() << Msg.str() << "\n";
   };
 
@@ -108,17 +118,25 @@ llvm::Error AllTUsToolExecutor::execute(
   const std::string TotalNumStr = std::to_string(Files.size());
   unsigned Counter = 0;
   auto Count = [&]() {
+#ifndef __wasi__
     std::unique_lock<std::mutex> LockGuard(TUMutex);
+#endif
     return ++Counter;
   };
 
   auto &Action = Actions.front();
 
   {
+#ifndef __wasi__
     llvm::ThreadPool Pool(llvm::hardware_concurrency(ThreadCount));
+#endif
     for (std::string File : Files) {
+#ifndef __wasi__
       Pool.async(
           [&](std::string Path) {
+#else
+          std::string Path = File;
+#endif
             Log("[" + std::to_string(Count()) + "/" + TotalNumStr +
                 "] Processing file " + Path);
             // Each thread gets an indepent copy of a VFS to allow different
@@ -135,11 +153,15 @@ llvm::Error AllTUsToolExecutor::execute(
             if (Tool.run(Action.first.get()))
               AppendError(llvm::Twine("Failed to run action on ") + Path +
                           "\n");
+#ifndef __wasi__
           },
           File);
+#endif
     }
+#ifndef __wasi__
     // Make sure all tasks have finished before resetting the working directory.
     Pool.wait();
+#endif
   }
 
   if (!ErrorMsg.empty())

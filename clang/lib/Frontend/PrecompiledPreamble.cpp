@@ -32,7 +32,9 @@
 #include "llvm/Support/Process.h"
 #include "llvm/Support/VirtualFileSystem.h"
 #include <limits>
+#ifndef __wasi__
 #include <mutex>
+#endif
 #include <utility>
 
 using namespace clang;
@@ -159,7 +161,9 @@ public:
   void removeFile(StringRef File);
 
 private:
+#ifndef __wasi__
   std::mutex Mutex;
+#endif
   llvm::StringSet<> Files;
 };
 
@@ -169,20 +173,26 @@ TemporaryFiles &TemporaryFiles::getInstance() {
 }
 
 TemporaryFiles::~TemporaryFiles() {
+#ifndef __wasi__
   std::lock_guard<std::mutex> Guard(Mutex);
+#endif
   for (const auto &File : Files)
     llvm::sys::fs::remove(File.getKey());
 }
 
 void TemporaryFiles::addFile(StringRef File) {
+#ifndef __wasi__
   std::lock_guard<std::mutex> Guard(Mutex);
+#endif
   auto IsInserted = Files.insert(File).second;
   (void)IsInserted;
   assert(IsInserted && "File has already been added");
 }
 
 void TemporaryFiles::removeFile(StringRef File) {
+#ifndef __wasi__
   std::lock_guard<std::mutex> Guard(Mutex);
+#endif
   auto WasPresent = Files.erase(File);
   (void)WasPresent;
   assert(WasPresent && "File was not tracked");

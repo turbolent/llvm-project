@@ -46,7 +46,9 @@ void ErrorHandler::initialize(llvm::raw_ostream &stdoutOS,
 }
 
 void ErrorHandler::flushStreams() {
+#ifndef __wasi__
   std::lock_guard<std::mutex> lock(mu);
+#endif
   outs().flush();
   errs().flush();
 }
@@ -224,14 +226,18 @@ void ErrorHandler::reportDiagnostic(StringRef location, Colors c,
 void ErrorHandler::log(const Twine &msg) {
   if (!verbose || disableOutput)
     return;
+#ifndef __wasi__
   std::lock_guard<std::mutex> lock(mu);
+#endif
   reportDiagnostic(logName, Colors::RESET, "", msg);
 }
 
 void ErrorHandler::message(const Twine &msg, llvm::raw_ostream &s) {
   if (disableOutput)
     return;
+#ifndef __wasi__
   std::lock_guard<std::mutex> lock(mu);
+#endif
   s << msg << "\n";
   s.flush();
 }
@@ -245,7 +251,9 @@ void ErrorHandler::warn(const Twine &msg) {
   if (suppressWarnings)
     return;
 
+#ifndef __wasi__
   std::lock_guard<std::mutex> lock(mu);
+#endif
   reportDiagnostic(getLocation(msg), Colors::MAGENTA, "warning", msg);
   sep = getSeparator(msg);
 }
@@ -269,8 +277,9 @@ void ErrorHandler::error(const Twine &msg) {
 
   bool exit = false;
   {
+#ifndef __wasi__
     std::lock_guard<std::mutex> lock(mu);
-
+#endif
     if (errorLimit == 0 || errorCount < errorLimit) {
       reportDiagnostic(getLocation(msg), Colors::RED, "error", msg);
     } else if (errorCount == errorLimit) {

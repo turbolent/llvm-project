@@ -86,8 +86,10 @@ struct DebuginfodLogEntry {
 };
 
 class DebuginfodLog {
+#ifndef __wasi__
   std::mutex QueueMutex;
   std::condition_variable QueueCondition;
+#endif
   std::queue<DebuginfodLogEntry> LogEntryQueue;
 
 public:
@@ -103,9 +105,13 @@ public:
 /// Tracks a collection of debuginfod artifacts on the local filesystem.
 class DebuginfodCollection {
   SmallVector<std::string, 1> Paths;
+#ifndef __wasi__
   sys::RWMutex BinariesMutex;
+#endif
   StringMap<std::string> Binaries;
+#ifndef __wasi__
   sys::RWMutex DebugBinariesMutex;
+#endif
   StringMap<std::string> DebugBinaries;
   Error findBinaries(StringRef Path);
   Expected<Optional<std::string>> getDebugBinaryPath(BuildIDRef);
@@ -117,7 +123,9 @@ class DebuginfodCollection {
   DebuginfodLog &Log;
   ThreadPool &Pool;
   Timer UpdateTimer;
+#ifndef __wasi__
   sys::Mutex UpdateMutex;
+#endif
 
   // Minimum update interval, in seconds, for on-demand updates triggered when a
   // build-id is not found.

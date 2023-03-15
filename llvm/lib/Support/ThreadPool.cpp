@@ -10,6 +10,8 @@
 //
 //===----------------------------------------------------------------------===//
 
+#ifndef __wasi__
+
 #include "llvm/Support/ThreadPool.h"
 
 #include "llvm/Config/llvm-config.h"
@@ -217,5 +219,7 @@ bool ThreadPool::isWorkerThread() const {
 }
 
 ThreadPool::~ThreadPool() { wait(); }
+
+#endif
 
 #endif

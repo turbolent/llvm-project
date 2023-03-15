@@ -14,15 +14,18 @@
 #include "llvm/Support/Endian.h"
 #include "llvm/Support/FileSystem.h"
 #include "llvm/Support/MemoryBuffer.h"
+#ifndef __wasi__
 #include "llvm/Support/Mutex.h"
+#endif
 #include "llvm/Support/Process.h"
 #include "llvm/Support/ScopedPrinter.h"
 #include "llvm/Support/ToolOutputFile.h"
 
 using namespace llvm;
 
+#ifndef __wasi__
 static sys::SmartMutex<true> OutputMutex;
-
+#endif
 CodeGenCoverage::CodeGenCoverage() = default;
 
 void CodeGenCoverage::setCovered(uint64_t RuleID) {
@@ -78,8 +81,9 @@ bool CodeGenCoverage::parse(MemoryBuffer &Buffer, StringRef BackendName) {
 bool CodeGenCoverage::emit(StringRef CoveragePrefix,
                            StringRef BackendName) const {
   if (!CoveragePrefix.empty() && !RuleCoverage.empty()) {
+#ifndef __wasi__
     sys::SmartScopedLock<true> Lock(OutputMutex);
-
+#endif
     // We can handle locking within a process easily enough but we don't want to
     // manage it between multiple processes. Use the process ID to ensure no
     // more than one process is ever writing to the same file at the same time.

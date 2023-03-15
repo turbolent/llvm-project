@@ -36,7 +36,9 @@ struct PassRegistrationListener;
 /// threads simultaneously, you will need to use a separate PassRegistry on
 /// each thread.
 class PassRegistry {
+#ifndef __wasi__
   mutable sys::SmartRWMutex<true> Lock;
+#endif
 
   /// PassInfoMap - Keep track of the PassInfo object for each registered pass.
   using MapType = DenseMap<const void *, const PassInfo *>;

@@ -418,8 +418,10 @@ static void splitCodeGen(const Config &C, TargetMachine *TM,
                          AddStreamFn AddStream,
                          unsigned ParallelCodeGenParallelismLevel, Module &Mod,
                          const ModuleSummaryIndex &CombinedIndex) {
+#ifndef __wasi__
   ThreadPool CodegenThreadPool(
       heavyweight_hardware_concurrency(ParallelCodeGenParallelismLevel));
+#endif
   unsigned ThreadCount = 0;
   const Target *T = &TM->getTarget();
 
@@ -436,9 +438,13 @@ static void splitCodeGen(const Config &C, TargetMachine *TM,
         raw_svector_ostream BCOS(BC);
         WriteBitcodeToFile(*MPart, BCOS);
 
+#ifndef __wasi__
         // Enqueue the task
         CodegenThreadPool.async(
             [&](const SmallString<0> &BC, unsigned ThreadId) {
+#else
+        unsigned ThreadId = ThreadCount++;
+#endif
               LTOLLVMContext Ctx(C);
               Expected<std::unique_ptr<Module>> MOrErr = parseBitcodeFile(
                   MemoryBufferRef(StringRef(BC.data(), BC.size()), "ld-temp.o"),
@@ -452,17 +458,21 @@ static void splitCodeGen(const Config &C, TargetMachine *TM,
 
               codegen(C, TM.get(), AddStream, ThreadId, *MPartInCtx,
                       CombinedIndex);
+#ifndef __wasi__
             },
             // Pass BC using std::move to ensure that it get moved rather than
             // copied into the thread's context.
             std::move(BC), ThreadCount++);
+#endif
       },
       false);
 
+#ifndef __wasi__
   // Because the inner lambda (which runs in a worker thread) captures our local
   // variables, we need to wait for the worker threads to terminate before we
   // can leave the function scope.
   CodegenThreadPool.wait();
+#endif
 }
 
 static Expected<const Target *> initAndLookupTarget(const Config &C,

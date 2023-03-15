@@ -10837,10 +10837,14 @@ namespace {
 const EVT *SDNode::getValueTypeList(EVT VT) {
   static std::set<EVT, EVT::compareRawBits> EVTs;
   static EVTArray SimpleVTArray;
+#ifndef __wasi__
   static sys::SmartMutex<true> VTMutex;
+#endif
 
   if (VT.isExtended()) {
+#ifndef __wasi__
     sys::SmartScopedLock<true> Lock(VTMutex);
+#endif
     return &(*EVTs.insert(VT).first);
   }
   assert(VT.getSimpleVT() < MVT::VALUETYPE_SIZE && "Value type out of range!");

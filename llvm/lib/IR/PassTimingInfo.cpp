@@ -92,7 +92,9 @@ private:
   Timer *newPassTimer(StringRef PassID, StringRef PassDesc);
 };
 
+#ifndef __wasi__
 static ManagedStatic<sys::SmartMutex<true>> TimingInfoMutex;
+#endif
 
 PassTimingInfo::PassTimingInfo()
     : TG("pass", "... Pass execution timing report ...") {}
@@ -133,7 +135,9 @@ Timer *PassTimingInfo::getPassTimer(Pass *P, PassInstanceID Pass) {
     return nullptr;
 
   init();
+#ifndef __wasi__
   sys::SmartScopedLock<true> Lock(*TimingInfoMutex);
+#endif
   std::unique_ptr<Timer> &T = TimingData[Pass];
 
   if (!T) {

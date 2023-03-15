@@ -983,11 +983,15 @@ void ThinLTOCodeGenerator::run() {
   }
 
   if (CodeGenOnly) {
+#ifndef __wasi__
     // Perform only parallel codegen and return.
     ThreadPool Pool;
+#endif
     int count = 0;
     for (auto &Mod : Modules) {
+#ifndef __wasi__
       Pool.async([&](int count) {
+#endif
         LLVMContext Context;
         Context.setDiscardValueNames(LTODiscardValueNames);
 
@@ -1002,7 +1006,11 @@ void ThinLTOCodeGenerator::run() {
         else
           ProducedBinaryFiles[count] =
               writeGeneratedObject(count, "", *OutputBuffer);
+#ifndef __wasi__
       }, count++);
+#else
+      count++;
+#endif
     }
 
     return;
@@ -1125,10 +1133,16 @@ void ThinLTOCodeGenerator::run() {
 
   // Parallel optimizer + codegen
   {
+#ifndef __wasi__
     ThreadPool Pool(heavyweight_hardware_concurrency(ThreadCount));
+#endif
     for (auto IndexCount : ModulesOrdering) {
       auto &Mod = Modules[IndexCount];
+#ifndef __wasi__
       Pool.async([&](int count) {
+#else
+      int count = IndexCount;
+#endif
         auto ModuleIdentifier = Mod->getName();
         auto &ExportList = ExportLists[ModuleIdentifier];
 
@@ -1213,7 +1227,9 @@ void ThinLTOCodeGenerator::run() {
         }
         ProducedBinaryFiles[count] = writeGeneratedObject(
             count, CacheEntryPath, *OutputBuffer);
+#ifndef __wasi__
       }, IndexCount);
+#endif
     }
   }
 

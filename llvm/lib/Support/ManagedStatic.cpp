@@ -14,21 +14,27 @@
 #include "llvm/Config/config.h"
 #include "llvm/Support/Threading.h"
 #include <cassert>
+#ifndef __wasi__
 #include <mutex>
+#endif
 using namespace llvm;
 
 static const ManagedStaticBase *StaticList = nullptr;
 
+#ifndef __wasi__
 static std::recursive_mutex *getManagedStaticMutex() {
   static std::recursive_mutex m;
   return &m;
 }
+#endif
 
 void ManagedStaticBase::RegisterManagedStatic(void *(*Creator)(),
                                               void (*Deleter)(void*)) const {
   assert(Creator);
   if (llvm_is_multithreaded()) {
+#ifndef __wasi__
     std::lock_guard<std::recursive_mutex> Lock(*getManagedStaticMutex());
+#endif
 
     if (!Ptr.load(std::memory_order_relaxed)) {
       void *Tmp = Creator();

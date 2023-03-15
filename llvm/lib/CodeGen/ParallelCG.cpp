@@ -52,7 +52,9 @@ void llvm::splitCodeGen(
   // Create ThreadPool in nested scope so that threads will be joined
   // on destruction.
   {
+#ifndef __wasi__
     ThreadPool CodegenThreadPool(hardware_concurrency(OSs.size()));
+#endif
     int ThreadCount = 0;
 
     SplitModule(
@@ -74,9 +76,11 @@ void llvm::splitCodeGen(
           }
 
           llvm::raw_pwrite_stream *ThreadOS = OSs[ThreadCount++];
+#ifndef __wasi__
           // Enqueue the task
           CodegenThreadPool.async(
               [TMFactory, FileType, ThreadOS](const SmallString<0> &BC) {
+#endif
                 LLVMContext Ctx;
                 Expected<std::unique_ptr<Module>> MOrErr = parseBitcodeFile(
                     MemoryBufferRef(StringRef(BC.data(), BC.size()),
@@ -87,10 +91,12 @@ void llvm::splitCodeGen(
                 std::unique_ptr<Module> MPartInCtx = std::move(MOrErr.get());
 
                 codegen(MPartInCtx.get(), *ThreadOS, TMFactory, FileType);
+#ifndef __wasi__
               },
               // Pass BC using std::move to ensure that it get moved rather than
               // copied into the thread's context.
               std::move(BC));
+#endif
         },
         PreserveLocals);
   }

@@ -13,6 +13,8 @@
 #ifndef LLVM_SUPPORT_MUTEX_H
 #define LLVM_SUPPORT_MUTEX_H
 
+#ifndef __wasi__
+
 #include "llvm/Support/Threading.h"
 #include <cassert>
 #include <mutex>
@@ -73,5 +75,7 @@ namespace llvm
     typedef SmartScopedLock<false> ScopedLock;
   }
 }
+
+#endif
 
 #endif

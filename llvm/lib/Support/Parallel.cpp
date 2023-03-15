@@ -12,9 +12,13 @@
 #include "llvm/Support/Threading.h"
 
 #include <atomic>
+#ifndef __wasi__
 #include <future>
+#endif
 #include <stack>
+#ifndef __wasi__
 #include <thread>
+#endif
 #include <vector>
 
 llvm::ThreadPoolStrategy llvm::parallel::strategy;

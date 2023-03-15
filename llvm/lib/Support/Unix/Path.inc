@@ -32,7 +32,9 @@
 #endif
 
 #include <dirent.h>
+#ifndef __wasi__
 #include <pwd.h>
+#endif
 #include <sys/file.h>
 
 #ifdef __APPLE__
@@ -73,6 +75,7 @@ extern char **environ;
 #endif
 
 #include <sys/types.h>
+#ifndef __wasi__
 #if !defined(__APPLE__) && !defined(__OpenBSD__) && !defined(__FreeBSD__) &&   \
     !defined(__linux__) && !defined(__FreeBSD_kernel__) && !defined(_AIX)
 #include <sys/statvfs.h>
@@ -117,6 +120,7 @@ typedef uint_t uint;
 #else
 #define STATVFS_F_FLAG(vfs) (vfs).f_flags
 #endif
+#endif
 
 using namespace llvm;
 
@@ -124,12 +128,24 @@ namespace llvm {
 namespace sys  {
 namespace fs {
 
+#ifdef __wasi__
+char* realpath(const char* path, char* resolved_path) {
+  // TODO
+  if (resolved_path == nullptr) {
+    resolved_path = strdup(path);
+  } else {
+    strncpy(resolved_path, path, PATH_MAX);
+  }
+  return resolved_path;
+}
+#endif
+
 const file_t kInvalidFile = -1;
 
 #if defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__) ||     \
     defined(__minix) || defined(__FreeBSD_kernel__) || defined(__linux__) ||   \
     defined(__CYGWIN__) || defined(__DragonFly__) || defined(_AIX) || defined(__GNU__) || \
-    (defined(__sun__) && defined(__svr4__))
+    (defined(__sun__) && defined(__svr4__)) || defined(__wasi__)
 static int
 test_dir(char ret[PATH_MAX], const char *dir, const char *bin)
 {
@@ -333,6 +349,11 @@ std::string getMainExecutableImpl(const char *argv0, void *MainAddr) {
   char link_path[PATH_MAX];
   if (realpath(DLInfo.dli_fname, link_path))
     return link_path;
+#elif defined(__wasi__)
+  char exe_path[PATH_MAX];
+  // Fall back to the classical detection.
+  if (getprogpath(exe_path, argv0))
+    return exe_path;
 #else
 #error GetMainExecutable is not implemented on this host yet.
 #endif
@@ -356,6 +377,7 @@ uint32_t file_status::getLinkCount() const {
 }
 
 ErrorOr<space_info> disk_space(const Twine &Path) {
+#ifndef __wasi__
   struct STATVFS Vfs;
   if (::STATVFS(const_cast<char *>(Path.str().c_str()), &Vfs))
     return std::error_code(errno, std::generic_category());
@@ -365,6 +387,14 @@ ErrorOr<space_info> disk_space(const Twine &Path) {
   SpaceInfo.free = static_cast<uint64_t>(Vfs.f_bfree) * FrSize;
   SpaceInfo.available = static_cast<uint64_t>(Vfs.f_bavail) * FrSize;
   return SpaceInfo;
+#else
+  // TODO:
+  space_info SpaceInfo;
+  SpaceInfo.capacity = 0;
+  SpaceInfo.free = 0;
+  SpaceInfo.available = 0;
+  return SpaceInfo;
+#endif
 }
 
 std::error_code current_path(SmallVectorImpl<char> &result) {
@@ -382,6 +412,7 @@ std::error_code current_path(SmallVectorImpl<char> &result) {
 
   result.resize_for_overwrite(PATH_MAX);
 
+#ifndef __wasi__
   while (true) {
     if (::getcwd(result.data(), result.size()) == nullptr) {
       // See if there was a real error.
@@ -394,17 +425,24 @@ std::error_code current_path(SmallVectorImpl<char> &result) {
     } else
       break;
   }
+#else
+  // TODO:
+  const char* root = "/";
+  result.append(root, root + 2);
+#endif
 
   result.truncate(strlen(result.data()));
   return std::error_code();
 }
 
 std::error_code set_current_path(const Twine &path) {
+#ifndef __wasi__
   SmallString<128> path_storage;
   StringRef p = path.toNullTerminatedStringRef(path_storage);
 
   if (::chdir(p.begin()) == -1)
     return std::error_code(errno, std::generic_category());
+#endif
 
   return std::error_code();
 }
@@ -509,6 +547,9 @@ static bool is_local_impl(struct STATVFS &Vfs) {
 #elif defined(__EMSCRIPTEN__)
   // Emscripten doesn't currently support remote filesystem mounts.
   return true;
+#elif defined(__wasi__)
+  // WASI doesn't expose this information.
+  return false;
 #elif defined(__HAIKU__)
   // Haiku doesn't expose this information.
   return false;
@@ -561,20 +602,28 @@ static bool is_local_impl(struct STATVFS &Vfs) {
 }
 
 std::error_code is_local(const Twine &Path, bool &Result) {
+#ifndef __wasi__
   struct STATVFS Vfs;
   if (::STATVFS(const_cast<char *>(Path.str().c_str()), &Vfs))
     return std::error_code(errno, std::generic_category());
 
   Result = is_local_impl(Vfs);
+#else
+  Result = true;
+#endif
   return std::error_code();
 }
 
 std::error_code is_local(int FD, bool &Result) {
+#ifndef __wasi__
   struct STATVFS Vfs;
   if (::FSTATVFS(FD, &Vfs))
     return std::error_code(errno, std::generic_category());
 
   Result = is_local_impl(Vfs);
+#else
+  Result = true;
+#endif
   return std::error_code();
 }
 
@@ -659,7 +708,9 @@ static void expandTildeExpr(SmallVectorImpl<char> &Path) {
   PathStr = PathStr.drop_front();
   StringRef Expr =
       PathStr.take_until([](char c) { return path::is_separator(c); });
+#ifndef __wasi__
   StringRef Remainder = PathStr.substr(Expr.size() + 1);
+#endif
   SmallString<128> Storage;
   if (Expr.empty()) {
     // This is just ~/..., resolve it to the current user's home dir.
@@ -674,6 +725,7 @@ static void expandTildeExpr(SmallVectorImpl<char> &Path) {
     return;
   }
 
+#ifndef __wasi__
   // This is a string of the form ~username/, look up this user's entry in the
   // password database.
   struct passwd *Entry = nullptr;
@@ -689,6 +741,7 @@ static void expandTildeExpr(SmallVectorImpl<char> &Path) {
   Path.clear();
   Path.append(Entry->pw_dir, Entry->pw_dir + strlen(Entry->pw_dir));
   llvm::sys::path::append(Path, Storage);
+#endif
 }
 
 
@@ -766,25 +819,36 @@ std::error_code status(int FD, file_status &Result) {
 }
 
 unsigned getUmask() {
+#ifndef __wasi__
   // Chose arbitary new mask and reset the umask to the old mask.
   // umask(2) never fails so ignore the return of the second call.
   unsigned Mask = ::umask(0);
   (void) ::umask(Mask);
   return Mask;
+#else
+  // TODO:
+  return 022;
+#endif
 }
 
 std::error_code setPermissions(const Twine &Path, perms Permissions) {
+#ifndef __wasi__
   SmallString<128> PathStorage;
   StringRef P = Path.toNullTerminatedStringRef(PathStorage);
 
   if (::chmod(P.begin(), Permissions))
     return std::error_code(errno, std::generic_category());
+#endif
+
   return std::error_code();
 }
 
 std::error_code setPermissions(int FD, perms Permissions) {
+#ifndef __wasi__
   if (::fchmod(FD, Permissions))
     return std::error_code(errno, std::generic_category());
+#endif
+
   return std::error_code();
 }
 
@@ -825,6 +889,7 @@ std::error_code setLastAccessAndModificationTime(int FD, TimePoint<> AccessTime,
 
 std::error_code mapped_file_region::init(int FD, uint64_t Offset,
                                          mapmode Mode) {
+#ifndef __wasi__
   assert(Size != 0);
 
   int flags = (Mode == readwrite) ? MAP_SHARED : MAP_PRIVATE;
@@ -856,6 +921,11 @@ std::error_code mapped_file_region::init(int FD, uint64_t Offset,
   if (Mapping == MAP_FAILED)
     return std::error_code(errno, std::generic_category());
   return std::error_code();
+#else
+  // Fail.
+  errno = EINVAL;
+  return std::error_code(errno, std::generic_category());
+#endif
 }
 
 mapped_file_region::mapped_file_region(int fd, mapmode mode, size_t length,
@@ -868,15 +938,17 @@ mapped_file_region::mapped_file_region(int fd, mapmode mode, size_t length,
 }
 
 void mapped_file_region::unmapImpl() {
+#ifndef __wasi__
   if (Mapping)
     ::munmap(Mapping, Size);
+#endif
 }
 
 void mapped_file_region::dontNeedImpl() {
   assert(Mode == mapped_file_region::readonly);
   if (!Mapping)
       return;
-#if defined(__MVS__) || defined(_AIX)
+#if defined(__MVS__) || defined(_AIX) || defined(__wasi__)
   // If we don't have madvise, or it isn't beneficial, treat this as a no-op.
 #elif defined(POSIX_MADV_DONTNEED)
   ::posix_madvise(Mapping, Size, POSIX_MADV_DONTNEED);
@@ -918,7 +990,7 @@ static file_type direntType(dirent* Entry) {
   // Note that while glibc provides a macro to see if this is supported,
   // _DIRENT_HAVE_D_TYPE, it's not defined on BSD/Mac, so we test for the
   // d_type-to-mode_t conversion macro instead.
-#if defined(DTTOIF)
+#if defined(DTTOIF) && !defined(__wasi__)
   return typeForMode(DTTOIF(Entry->d_type));
 #else
   // Other platforms such as Solaris require a stat() to get the type.
@@ -1158,8 +1230,13 @@ std::error_code openFileForRead(const Twine &Name, int &ResultFD,
     StringRef P = Name.toNullTerminatedStringRef(Storage);
 
     // Use ::realpath to get the real path name
+#ifndef __wasi__
     if (::realpath(P.begin(), Buffer) != nullptr)
+#else
+    if (realpath(P.begin(), Buffer) != nullptr)
+#endif
       RealPath->append(Buffer, Buffer + strlen(Buffer));
+
 #if defined(TRY_PROC_SELF_FD)
   }
 #endif
@@ -1215,6 +1292,7 @@ Expected<size_t> readNativeFileSlice(file_t FD, MutableArrayRef<char> Buf,
 }
 
 std::error_code tryLockFile(int FD, std::chrono::milliseconds Timeout) {
+#ifndef __wasi__
   auto Start = std::chrono::steady_clock::now();
   auto End = Start + Timeout;
   do {
@@ -1232,9 +1310,13 @@ std::error_code tryLockFile(int FD, std::chrono::milliseconds Timeout) {
     usleep(1000);
   } while (std::chrono::steady_clock::now() < End);
   return make_error_code(errc::no_lock_available);
+#else
+  return make_error_code(errc::no_lock_available);
+#endif
 }
 
 std::error_code lockFile(int FD) {
+#ifndef __wasi__
   struct flock Lock;
   memset(&Lock, 0, sizeof(Lock));
   Lock.l_type = F_WRLCK;
@@ -1245,9 +1327,13 @@ std::error_code lockFile(int FD) {
     return std::error_code();
   int Error = errno;
   return std::error_code(Error, std::generic_category());
+#else
+  return make_error_code(errc::no_lock_available);
+#endif
 }
 
 std::error_code unlockFile(int FD) {
+#ifndef __wasi__
   struct flock Lock;
   Lock.l_type = F_UNLCK;
   Lock.l_whence = SEEK_SET;
@@ -1256,6 +1342,9 @@ std::error_code unlockFile(int FD) {
   if (::fcntl(FD, F_SETLK, &Lock) != -1)
     return std::error_code();
   return std::error_code(errno, std::generic_category());
+#else
+  return make_error_code(errc::no_lock_available);
+#endif
 }
 
 std::error_code closeFile(file_t &F) {
@@ -1319,17 +1408,23 @@ std::error_code real_path(const Twine &path, SmallVectorImpl<char> &dest,
   SmallString<128> Storage;
   StringRef P = path.toNullTerminatedStringRef(Storage);
   char Buffer[PATH_MAX];
+#ifndef __wasi__
   if (::realpath(P.begin(), Buffer) == nullptr)
+#else
+  if (realpath(P.begin(), Buffer) == nullptr)
+#endif
     return std::error_code(errno, std::generic_category());
   dest.append(Buffer, Buffer + strlen(Buffer));
   return std::error_code();
 }
 
 std::error_code changeFileOwnership(int FD, uint32_t Owner, uint32_t Group) {
+#ifndef __wasi__
   auto FChown = [&]() { return ::fchown(FD, Owner, Group); };
   // Retry if fchown call fails due to interruption.
   if ((sys::RetryAfterSignal(-1, FChown)) < 0)
     return std::error_code(errno, std::generic_category());
+#endif
   return std::error_code();
 }
 
@@ -1339,11 +1434,13 @@ namespace path {
 
 bool home_directory(SmallVectorImpl<char> &result) {
   char *RequestedDir = getenv("HOME");
+#ifndef __wasi__
   if (!RequestedDir) {
     struct passwd *pw = getpwuid(getuid());
     if (pw && pw->pw_dir)
       RequestedDir = pw->pw_dir;
   }
+#endif
   if (!RequestedDir)
     return false;
 

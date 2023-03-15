@@ -95,6 +95,7 @@ ErrorOr<std::string> sys::findProgramByName(StringRef Name,
 }
 
 static bool RedirectIO(Optional<StringRef> Path, int FD, std::string* ErrMsg) {
+#ifndef __wasi__
   if (!Path) // Noop
     return false;
   std::string File;
@@ -120,6 +121,9 @@ static bool RedirectIO(Optional<StringRef> Path, int FD, std::string* ErrMsg) {
   }
   close(InFD);      // Close the original FD
   return false;
+#else
+  return true;
+#endif
 }
 
 #ifdef HAVE_POSIX_SPAWN
@@ -177,6 +181,7 @@ static bool Execute(ProcessInfo &PI, StringRef Program,
                     ArrayRef<Optional<StringRef>> Redirects,
                     unsigned MemoryLimit, std::string *ErrMsg,
                     BitVector *AffinityMask) {
+#ifndef __wasi__
   if (!llvm::sys::fs::exists(Program)) {
     if (ErrMsg)
       *ErrMsg = std::string("Executable \"") + Program.str() +
@@ -331,7 +336,12 @@ static bool Execute(ProcessInfo &PI, StringRef Program,
   PI.Process = child;
 
   return true;
+#else
+  return false;
+#endif
 }
+
+#ifndef __wasi__
 
 namespace llvm {
 namespace sys {
@@ -344,7 +354,9 @@ static pid_t (wait4)(pid_t pid, int *status, int options, struct rusage *usage);
 
 } // namespace sys
 } // namespace llvm
+#endif
 
+#ifndef __wasi__
 #ifdef _AIX
 #ifndef _ALL_SOURCE
 extern "C" pid_t (wait4)(pid_t pid, int *status, int options,
@@ -378,10 +390,13 @@ pid_t (llvm::sys::wait4)(pid_t pid, int *status, int options,
   return ::wait4(pid, status, options & ~WNOHANG, usage);
 }
 #endif
+#endif
 
 ProcessInfo llvm::sys::Wait(const ProcessInfo &PI, unsigned SecondsToWait,
                             bool WaitUntilTerminates, std::string *ErrMsg,
                             Optional<ProcessStatistics> *ProcStat) {
+
+#ifndef __wasi__
   struct sigaction Act, Old;
   assert(PI.Pid && "invalid pid to wait on, process not started?");
 
@@ -492,6 +507,12 @@ ProcessInfo llvm::sys::Wait(const ProcessInfo &PI, unsigned SecondsToWait,
     WaitResult.ReturnCode = -2;
   }
   return WaitResult;
+#else
+  ProcessInfo WaitResult;
+  WaitResult.Pid = 12345;
+  WaitResult.ReturnCode = -1;
+  return WaitResult;
+#endif
 }
 
 std::error_code llvm::sys::ChangeStdinMode(fs::OpenFlags Flags){

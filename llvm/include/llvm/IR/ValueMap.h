@@ -37,7 +37,9 @@
 #include <cassert>
 #include <cstddef>
 #include <iterator>
+#ifndef __wasi__
 #include <mutex>
+#endif
 #include <type_traits>
 #include <utility>
 
@@ -53,10 +55,15 @@ class ValueMapConstIterator;
 /// This class defines the default behavior for configurable aspects of
 /// ValueMap<>.  User Configs should inherit from this class to be as compatible
 /// as possible with future versions of ValueMap.
+#ifndef __wasi__
 template<typename KeyT, typename MutexT = sys::Mutex>
+#else
+template<typename KeyT, typename MutexT = void>
+#endif
 struct ValueMapConfig {
+#ifndef __wasi__
   using mutex_type = MutexT;
-
+#endif
   /// If FollowRAUW is true, the ValueMap will update mappings on RAUW. If it's
   /// false, the ValueMap will leave the original mapping in place.
   enum { FollowRAUW = true };
@@ -71,13 +78,14 @@ struct ValueMapConfig {
   static void onRAUW(const ExtraDataT & /*Data*/, KeyT /*Old*/, KeyT /*New*/) {}
   template<typename ExtraDataT>
   static void onDelete(const ExtraDataT &/*Data*/, KeyT /*Old*/) {}
-
+#ifndef __wasi__
   /// Returns a mutex that should be acquired around any changes to the map.
   /// This is only acquired from the CallbackVH (and held around calls to onRAUW
   /// and onDelete) and not inside other ValueMap methods.  NULL means that no
   /// mutex is necessary.
   template<typename ExtraDataT>
   static mutex_type *getMutex(const ExtraDataT &/*Data*/) { return nullptr; }
+#endif
 };
 
 /// See the file comment.
@@ -260,10 +268,12 @@ public:
   void deleted() override {
     // Make a copy that won't get changed even when *this is destroyed.
     ValueMapCallbackVH Copy(*this);
+#ifndef __wasi__
     typename Config::mutex_type *M = Config::getMutex(Copy.Map->Data);
     std::unique_lock<typename Config::mutex_type> Guard;
     if (M)
       Guard = std::unique_lock<typename Config::mutex_type>(*M);
+#endif
     Config::onDelete(Copy.Map->Data, Copy.Unwrap());  // May destroy *this.
     Copy.Map->Map.erase(Copy);  // Definitely destroys *this.
   }
@@ -273,11 +283,12 @@ public:
            "Invalid RAUW on key of ValueMap<>");
     // Make a copy that won't get changed even when *this is destroyed.
     ValueMapCallbackVH Copy(*this);
+#ifndef __wasi__
     typename Config::mutex_type *M = Config::getMutex(Copy.Map->Data);
     std::unique_lock<typename Config::mutex_type> Guard;
     if (M)
       Guard = std::unique_lock<typename Config::mutex_type>(*M);
-
+#endif
     KeyT typed_new_key = cast<KeySansPointerT>(new_key);
     // Can destroy *this:
     Config::onRAUW(Copy.Map->Data, Copy.Unwrap(), typed_new_key);

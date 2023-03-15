@@ -73,7 +73,9 @@
 #include "llvm/ADT/STLExtras.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/FileOutputBuffer.h"
+#ifndef __wasi__
 #include <mutex>
+#endif
 
 namespace llvm {
 class DiagnosticInfo;
@@ -131,12 +133,14 @@ private:
   // if the last messages was multi-line. Otherwise "".
   llvm::StringRef sep;
 
+#ifndef __wasi__
   // We wrap stdout and stderr so that you can pass alternative stdout/stderr as
   // arguments to lld::*::link() functions. Since lld::outs() or lld::errs() can
   // be indirectly called from multiple threads, we protect them using a mutex.
   // In the future, we plan on supporting several concurrent linker contexts,
   // which explains why the mutex is not a global but part of this context.
   std::mutex mu;
+#endif
   llvm::raw_ostream *stdoutOS{};
   llvm::raw_ostream *stderrOS{};
 };
